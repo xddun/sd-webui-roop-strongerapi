@@ -17,7 +17,7 @@ from modules.face_restoration import FaceRestoration, restore_faces
 from modules.upscaler import Upscaler, UpscalerData
 from scripts.roop_logging import logger
 
-providers = ["CPUExecutionProvider"]
+providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 
 
 @dataclass
@@ -28,22 +28,26 @@ class UpscaleOptions:
     face_restorer: FaceRestoration = None
     restorer_visibility: float = 0.5
 
+
 FS_MODEL = None
 CURRENT_FS_MODEL_PATH = None
+FS_MODEL = insightface.model_zoo.get_model("/home/xiedong/stable-diffusion-webui/models/roop/inswapper_128.onnx",
+                                           providers=providers)
+logger.info(f"kevin---------------inswapper_128.onnx, providers=providers)")
 
 
 def getFaceSwapModel(model_path: str):
     global FS_MODEL
     global CURRENT_FS_MODEL_PATH
+    global FS_MODEL
     if CURRENT_FS_MODEL_PATH is None or CURRENT_FS_MODEL_PATH != model_path:
         CURRENT_FS_MODEL_PATH = model_path
-        FS_MODEL = insightface.model_zoo.get_model(model_path, providers=providers)
-
     return FS_MODEL
 
 
 def upscale_image(image: Image, upscale_options: UpscaleOptions):
     result_image = image
+    logger.info(str(upscale_options))
     if upscale_options.upscaler is not None and upscale_options.upscaler.name != "None":
         original_image = result_image.copy()
         logger.info(
@@ -72,9 +76,15 @@ def upscale_image(image: Image, upscale_options: UpscaleOptions):
     return result_image
 
 
+face_analyser = insightface.app.FaceAnalysis(name="buffalo_l", providers=providers)
+face_analyser.prepare(ctx_id=0, det_size=(640, 640))
+logger.info(f"kevin---------------------------------buffalo_l")
+
+
 def get_face_single(img_data: np.ndarray, face_index=0, det_size=(640, 640)):
-    face_analyser = insightface.app.FaceAnalysis(name="buffalo_l", providers=providers)
-    face_analyser.prepare(ctx_id=0, det_size=det_size)
+    global face_analyser
+    # face_analyser = insightface.app.FaceAnalysis(name="buffalo_l", providers=providers)
+    # face_analyser.prepare(ctx_id=0, det_size=det_size)
     face = face_analyser.get(img_data)
 
     if len(face) == 0 and det_size[0] > 320 and det_size[1] > 320:
@@ -82,7 +92,9 @@ def get_face_single(img_data: np.ndarray, face_index=0, det_size=(640, 640)):
         return get_face_single(img_data, face_index=face_index, det_size=det_size_half)
 
     try:
-        return sorted(face, key=lambda x: x.bbox[0])[face_index]
+        # print("kevin-------------------------------big _> small sorted")
+        # return sorted(face, key=lambda x: x.bbox[0])[face_index]
+        return sorted(face, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]), reverse=True)[face_index]
     except IndexError:
         return None
 
@@ -99,11 +111,11 @@ class ImageResult:
 
 
 def swap_face(
-    source_img: Image.Image,
-    target_img: Image.Image,
-    model: Union[str, None] = None,
-    faces_index: Set[int] = {0},
-    upscale_options: Union[UpscaleOptions, None] = None,
+        source_img: Image.Image,
+        target_img: Image.Image,
+        model: Union[str, None] = None,
+        faces_index: Set[int] = {0},
+        upscale_options: Union[UpscaleOptions, None] = None,
 ) -> ImageResult:
     result_image = target_img
     converted = convert_to_sd(target_img)
@@ -138,5 +150,16 @@ def swap_face(
                 result_image = upscale_image(result_image, upscale_options)
         else:
             logger.info("No source face found")
+    result_image.save(fn.name)
+    return ImageResult(path=fn.name)
+
+
+def upscale_image_and_face_restorer(source_img: Image.Image,
+                                    upscale_options: Union[UpscaleOptions, None] = None, ) -> ImageResult:
+    result_image = source_img
+    converted = convert_to_sd(source_img)
+    scale, fn = converted[0], converted[1]
+    if upscale_options is not None:
+        result_image = upscale_image(result_image, upscale_options)
     result_image.save(fn.name)
     return ImageResult(path=fn.name)
