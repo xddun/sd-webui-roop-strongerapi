@@ -76,8 +76,6 @@ prefabricate_prompt_gender_boy = "muscle,Strength,Manhood,Virility,"
 
 
 def get_chat_completion_content(question="领克有哪些型号", timeout=50):
-    url_baichuan = "http://flyme-aigc.flyme.com/v1/chat/completions/Baichuan2-13B-Chat"
-    url = "http://flyme-aigc.flyme.com/v1/chat/completions/Qwen-14B-Chat"
     headers = {
         'Content-Type': 'application/json'
     }
